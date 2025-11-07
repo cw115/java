@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>회의 가능 시간 · 저장 / 회의 가능 시간대</title>
+    <style>
+        :root{
+          --gap: 10px;
+          --cell: 44px;
+          --radius: 10px;
+          --line: #e9edf2;
+          --text: #1f2937;
+          --sub:  #6b7280;
+          --blue: #2563eb;
+          --blue-weak:#e8f0ff;
+        }
+        *{ box-sizing:border-box; }
+        body{ margin:0; padding:24px; font-family: ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Apple SD Gothic Neo","Noto Sans KR",sans-serif; color:var(--text); background:#fff; }
+        h1{ font-size:20px; margin:0 0 12px; }
+        h2{ font-size:16px; margin:18px 0 8px; }
+        .card{ background:#fff; border:1px solid var(--line); border-radius:14px; padding:16px; box-shadow: 0 4px 16px rgba(0,0,0,.03); }
+        .row{ display:flex; gap:12px; flex-wrap:wrap; align-items:end; }
+        .field{ display:grid; gap:6px; }
+        label{ font-size:12px; color:var(--sub); }
+        input, select, button{ height:40px; padding:0 12px; border-radius:10px; outline:none; border:1px solid var(--line); background:#fff; color:var(--text); }
+        input:focus, select:focus{ border-color:#c7d2fe; box-shadow:0 0 0 3px #eef2ff; }
+        button{ border:1px solid #dbe3f1; background:#f8fafc; cursor:pointer; font-weight:600; }
+        button.primary{ background:var(--blue); color:#fff; border-color:var(--blue); }
+        button.ghost{ background:#fff; }
+        .muted{ color:var(--sub); font-size:12px; }
+        .hr{ height:1px; background:var(--line); margin:16px 0; }
+        .two{ display:grid; gap:16px; grid-template-columns:1fr 1fr; }
+        @media (max-width:1024px){ .two{ grid-template-columns:1fr; } }
+
+        .legend{ display:grid; grid-template-columns:repeat(24, var(--cell)); gap:6px; margin:4px 0 10px; font-size:11px; color:var(--sub); }
+        .grid{ display:grid; grid-template-columns:repeat(24, var(--cell)); gap:6px; padding:12px; border:1px solid var(--line); border-radius:12px; background:#fff; overflow-x:auto; }
+        .slot{
+          width:var(--cell); height:var(--cell); border-radius:8px;
+          border:1px solid var(--line); background:#fbfdff;
+          display:flex; align-items:center; justify-content:center;
+          font-size:11px; color:#6b7280; cursor:pointer;
+          transition:transform .06s ease, background .1s ease, border-color .1s ease, color .1s ease;
+          user-select:none;
+        }
+        .slot:hover{ transform:translateY(-1px); border-color:#cbd5e1; }
+        .slot.active{
+          background:var(--blue-weak); border-color:#bcd1ff; color:#1d4ed8; font-weight:700; box-shadow: inset 0 0 0 2px #cfe0ff;
+        }
+
+        .toast{ margin-top:10px; padding:10px 12px; border-radius:10px; font-size:14px; display:none; border:1px solid var(--line); background:#f9fafb; }
+        .toast.ok{ border-color:#d1fae5; background:#ecfdf5; color:#065f46; }
+        .toast.err{ border-color:#fee2e2; background:#fef2f2; color:#991b1b; }
+
+        .result-item{ border:1px solid var(--line); border-radius:10px; padding:12px; display:flex; gap:10px; align-items:center; background:#fff; }
+        .chip{ font-size:12px; padding:2px 8px; border-radius:999px; border:1px solid var(--line); color:#374151; background:#f9fafb; }
+        .ranges{ font-variant-numeric:tabular-nums; }
+    </style>
+</head>
+<body>
+<h1>회의 가능 시간 · 저장 / 회의시간 <h1>
+
+<!-- 1) 개인 저장 -->
+<section class="card">
+    <h2>1) 내 가능 시간 입력</h2>
+    <div class="row">
+        <div class="field">
+            <label for="userId">사용자 ID</label>
+            <input id="userId" type="number" min="1" placeholder="예: 1" />
+        </div>
+        <div class="field">
+            <label for="day">요일</label>
+            <select id="day">
+                <option value="0">일요일(0)</option><option value="1">월요일(1)</option>
+                <option value="2">화요일(2)</option><option value="3">수요일(3)</option>
+                <option value="4">목요일(4)</option><option value="5">금요일(5)</option>
+                <option value="6">토요일(6)</option>
+            </select>
+        </div>
+        <div class="field"><label>&nbsp;</label><button id="loadBtn" class="ghost">해당 요일 불러오기</button></div>
+        <div class="field"><label>&nbsp;</label><button id="clearBtn" class="ghost">선택 초기화</button></div>
+        <div class="field"><label>&nbsp;</label><button id="saveBtn" class="primary">저장하기</button></div>
+    </div>
+
+    <div class="legend" id="legend"></div>
+    <div id="grid" class="grid" aria-label="시간 선택 그리드"></div>
+
+    <div id="toast" class="toast"></div>
+    <p class="muted" style="margin-top:8px">※ 각 셀은 <b>30분</b>입니다. 셀에는 <b>시작 시각</b>이 적혀 있습니다.</p>
+</section>
+
+<div class="hr"></div>
+
+<!-- 2) 합집합(OR) 출력 -->
+<section class="card">
+    <h2>2) 회의 가능 시간 </h2>
+    <div class="row">
+        <div class="field" style="min-width:320px">
+            <label for="userIds">사용자 ID들 (쉼표 구분)</label>
+            <input id="userIds" type="text" placeholder="예: 1,2,3" />
+        </div>
+        <div class="field">
+            <label for="dayU">요일</label>
+            <select id="dayU">
+                <option value="0">일요일(0)</option><option value="1">월요일(1)</option>
+                <option value="2">화요일(2)</option><option value="3">수요일(3)</option>
+                <option value="4">목요일(4)</option><option value="5">금요일(5)</option>
+                <option value="6">토요일(6)</option>
+            </select>
+        </div>
+        <div class="field"><label>&nbsp;</label><button id="unionBtn" class="ghost">시간대 조회</button></div>
+    </div>
+
+    <div class="hr"></div>
+    <div id="unionBox"></div>
+</section>
+
+<script>
+    /* ========= 유틸 ========= */
+    const pad2 = n => String(n).padStart(2,'0');
+    function idxToLabel(i){
+      const h = Math.floor(i/2), m = (i%2===0?'00':'30');
+      const h2= Math.floor((i+1)/2), m2= (i%2===0?'30':'00');
+      return `${pad2(h)}:${m} ~ ${pad2(h2)}:${m2}`;
+    }
+    function startLabel(i){
+      const h = Math.floor(i/2), m = (i%2===0?'00':'30');
+      return `${pad2(h)}:${m}`;
+    }
+    function binaryToRanges(bin){
+      const ranges=[]; let s=-1;
+      for(let i=0;i<=bin.length;i++){
+        if(i<bin.length && bin[i]==='1'){ if(s===-1) s=i; }
+        else{
+          if(s!==-1){
+            const end = idxToLabel(i-1).split(' ~ ')[1];
+            ranges.push(`${startLabel(s)} ~ ${end}`);
+            s=-1;
+          }
+        }
+      }
+      return ranges;
+    }
+    function or48(a,b){
+      if(a.length!==48 || b.length!==48) return '0'.repeat(48);
+      let out=''; for(let i=0;i<48;i++) out += (a[i]==='1'||b[i]==='1')?'1':'0';
+      return out;
+    }
+
+    /* ========= UI(입력) ========= */
+    const grid   = document.getElementById('grid');
+    const legend = document.getElementById('legend');
+    const selected = new Set();
+
+    function buildLegend(){
+      legend.innerHTML='';
+      for(let h=0;h<24;h++){
+        const d = document.createElement('div');
+        d.style.textAlign='center'; d.textContent = pad2(h);
+        legend.appendChild(d);
+      }
+    }
+    function buildGrid(){
+      grid.innerHTML='';
+      for(let i=0;i<48;i++){
+        const btn = document.createElement('button');
+        btn.type='button'; btn.className='slot'; btn.dataset.idx=i;
+        btn.title = idxToLabel(i);
+        btn.innerHTML = startLabel(i);
+        btn.addEventListener('click', () => toggle(i, btn));
+        grid.appendChild(btn);
+      }
+    }
+    function toggle(i, el){
+      if(selected.has(i)){ selected.delete(i); el.classList.remove('active'); }
+      else { selected.add(i); el.classList.add('active'); }
+    }
+    function clearSelection(){
+      selected.clear();
+      document.querySelectorAll('.slot.active').forEach(el=>el.classList.remove('active'));
+    }
+    function applyIndices(indices){
+      clearSelection();
+      indices.forEach(i=>{
+        const el = grid.querySelector(`.slot[data-idx="${i}"]`);
+        if(el){ selected.add(i); el.classList.add('active'); }
+      });
+    }
+
+    /* ========= 저장/불러오기 ========= */
+    async function save(){
+      const userId = Number(document.getElementById('userId').value);
+      const dayOfWeek = Number(document.getElementById('day').value);
+      if(!userId && userId!==0){ showToast('사용자 ID를 입력하세요.', 'err'); return; }
+      const indices = Array.from(selected).sort((a,b)=>a-b);
+      try{
+        const res = await fetch('/api/time-slots', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ userId, dayOfWeek, indices })
+        });
+        if(!res.ok) throw new Error(`HTTP ${res.status}`);
+        showToast('저장 완료!', 'ok');
+      }catch(e){
+        showToast('저장 실패: '+e.message, 'err');
+        console.error(e);
+      }
+    }
+    async function loadForEdit(){
+      const userId = Number(document.getElementById('userId').value);
+      const dayOfWeek = Number(document.getElementById('day').value);
+      if(!userId && userId!==0){ showToast('사용자 ID를 입력하세요.', 'err'); return; }
+      try{
+        const res = await fetch(`/api/time-slots?userId=${encodeURIComponent(userId)}&dayOfWeek=${encodeURIComponent(dayOfWeek)}`);
+        if(!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        applyIndices(Array.isArray(data.indices)? data.indices: []);
+        showToast('불러오기 완료', 'ok');
+      }catch(e){
+        showToast('불러오기 실패: '+e.message, 'err');
+        console.error(e);
+      }
+    }
+
+    /* ========= 합집합(OR) ========= */
+    async function fetchUnion(){
+      const raw = document.getElementById('userIds').value.trim();
+      const day = Number(document.getElementById('dayU').value);
+      const box = document.getElementById('unionBox');
+      box.innerHTML='';
+
+      if(!raw){ box.innerHTML = `<div class="muted">사용자 ID들을 입력하세요. 예: 1,2,3</div>`; return; }
+      const ids = raw.split(',').map(s=>Number(s.trim())).filter(v=>!Number.isNaN(v));
+      if(ids.length===0){ box.innerHTML = `<div class="muted">올바른 ID가 없습니다.</div>`; return; }
+
+      try{
+        // 각 사용자 bitstring 조회
+        const results = await Promise.all(ids.map(async (id)=>{
+          const res = await fetch(`/api/time-slots?userId=${encodeURIComponent(id)}&dayOfWeek=${encodeURIComponent(day)}`);
+          if(!res.ok) throw new Error(`user ${id}: HTTP ${res.status}`);
+          const data = await res.json();
+          const bin = (data && typeof data.slots==='string' && data.slots.length===48) ? data.slots : '0'.repeat(48);
+          return bin;
+        }));
+
+        // OR 결합
+        const union = results.reduce((acc,cur)=> or48(acc,cur), '0'.repeat(48));
+        const ranges = binaryToRanges(union);
+        const dayNames=['일','월','화','수','목','금','토'];
+
+        const item = document.createElement('div');
+        item.className='result-item';
+        item.innerHTML = `
+          <span class="chip">${dayNames[day]}요일</span>
+          <div class="ranges">${ranges.length ? ranges.join('<br>') : '<span class="muted">겹치거나 포함된 가능 시간이 없습니다.</span>'}</div>
+        `;
+        box.appendChild(item);
+      }catch(e){
+        box.innerHTML = `<div class="toast err" style="display:block">합집합 조회 실패: ${e.message}</div>`;
+        console.error(e);
+      }
+    }
+
+    /* ========= 토스트 ========= */
+    function showToast(msg, type){
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = 'toast ' + (type==='ok' ? 'ok' : 'err');
+      t.style.display='block';
+      clearTimeout(showToast._to);
+      showToast._to = setTimeout(()=>{ t.style.display='none'; }, 2000);
+    }
+
+    /* ========= 초기화 ========= */
+    buildLegend();
+    buildGrid();
+
+    document.getElementById('saveBtn').onclick = save;
+    document.getElementById('clearBtn').onclick = clearSelection;
+    document.getElementById('loadBtn').onclick = loadForEdit;
+    document.getElementById('unionBtn').onclick = fetchUnion;
+
+    document.getElementById('day').addEventListener('change', () => {
+      if(document.getElementById('userId').value) loadForEdit();
+    });
+</script>
+</body>
+</html>
